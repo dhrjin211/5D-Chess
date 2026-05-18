@@ -20,9 +20,7 @@ function serializeHistory(actionHistory) {
         coordinate: action.end.coordinate,
       },
     }));
-  } catch(e) {
-    return [];
-  }
+  } catch(e) { return []; }
 }
 
 export default function Game({ roomId, playerColor, isHost, onLeave }) {
@@ -62,8 +60,11 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const renderer = rendererRef.current;
     if (!renderer) return;
     renderer.global.sync(chess);
-    const turn = chess.player === 0 ? 'white' : 'black';
-    if (turn === playerColorRef.current) {
+    // Show available moves only when it's this player's turn
+    // In 5d-chess-js: player 0 = white, player 1 = black
+    const myPlayerIndex = playerColorRef.current === 'white' ? 0 : 1;
+    const itIsMyTurn = chess.player === myPlayerIndex;
+    if (itIsMyTurn) {
       try {
         renderer.global.availableMoves(chess.moves('all'));
       } catch (e) {
@@ -76,12 +77,13 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   function updateUIState(chess) {
     if (!isMounted.current) return;
+    // chess.player is who moves NEXT (0=white, 1=black)
     const turn = chess.player === 0 ? 'white' : 'black';
     setCurrentTurn(turn);
     setMoveBuffer(chess.moveBuffer ? [...chess.moveBuffer] : []);
     setInCheck(!!(chess.inCheck && chess.inCheck.length > 0));
     if (chess.isCheckmate) {
-      setGameStatus(chess.player === 0 ? 'Black wins by checkmate!' : 'White wins by checkmate!');
+      setGameStatus(chess.player === 0 ? 'Black wins!' : 'White wins!');
     } else if (chess.isStalemate) {
       setGameStatus('Draw by stalemate');
     } else if (chess.inCheck && chess.inCheck.length > 0) {
@@ -111,13 +113,12 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     syncRenderer(chess);
     updateUIState(chess);
 
-    // The renderer emits 'moveSelect' with the full move object from chess.moves()
-    // We pass it directly to chess.move() - no re-matching needed
     renderer.on('moveSelect', (move) => {
       const chess = chessRef.current;
       if (!chess) return;
-      const turn = chess.player === 0 ? 'white' : 'black';
-      if (turn !== playerColorRef.current) return;
+      // Only allow moving if it's your turn
+      const myPlayerIndex = playerColorRef.current === 'white' ? 0 : 1;
+      if (chess.player !== myPlayerIndex) return;
       try {
         chess.move(move);
         syncRenderer(chess);
@@ -137,9 +138,9 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   function handleSubmit() {
     const chess = chessRef.current;
     if (!chess) return;
-    if (chess.player !== (playerColorRef.current === 'white' ? 0 : 1)) return;
     if (!chess.moveBuffer || chess.moveBuffer.length === 0) return;
     try {
+      // submit() finalizes the current player's turn
       chess.submit();
       syncRenderer(chess);
       updateUIState(chess);
@@ -161,7 +162,13 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     }
   }
 
-  const isMyTurn = currentTurn === playerColor;
+  // isMyTurn: it's your turn when chess.player matches your color index
+  // BUT also show "your turn" when you have moves staged (moveBuffer > 0 and you just moved)
+  const myPlayerIndex = playerColor === 'white' ? 0 : 1;
+  const chess = chessRef.current;
+  const hasStagedMoves = moveBuffer.length > 0;
+  // After staging moves, chess.player flips - so check moveBuffer too
+  const isMyTurn = currentTurn === playerColor || hasStagedMoves;
 
   return (
     <div className="game">
@@ -199,7 +206,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
         <div className="side-panel">
           <div className="side-section">
             <div className="player-block opponent">
-              <div className={`player-indicator ${currentTurn !== playerColor ? 'active' : ''}`} />
+              <div className={`player-indicator ${!isMyTurn ? 'active' : ''}`} />
               <div>
                 <div className="player-name">Opponent</div>
                 <div className="player-color">{playerColor === 'white' ? 'Black' : 'White'}</div>
@@ -219,10 +226,18 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
           </div>
           <div className="side-divider" />
           <div className="side-section actions-section">
-            <button className="action-btn submit-btn" onClick={handleSubmit} disabled={!isMyTurn || moveBuffer.length === 0}>
+            <button
+              className="action-btn submit-btn"
+              onClick={handleSubmit}
+              disabled={moveBuffer.length === 0}
+            >
               Submit Turn
             </button>
-            <button className="action-btn undo-btn" onClick={handleUndo} disabled={!isMyTurn || moveBuffer.length === 0}>
+            <button
+              className="action-btn undo-btn"
+              onClick={handleUndo}
+              disabled={moveBuffer.length === 0}
+            >
               Undo Move
             </button>
           </div>
