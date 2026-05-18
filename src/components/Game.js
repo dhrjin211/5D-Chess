@@ -4,6 +4,27 @@ import ChessRenderer from '5d-chess-renderer';
 import { useFirebaseGame, watchRoomStatus } from '../hooks/useFirebaseGame';
 import './Game.css';
 
+function serializeHistory(actionHistory) {
+  try {
+    return actionHistory.map(action => ({
+      start: {
+        timeline: action.start.timeline,
+        turn: action.start.turn,
+        player: action.start.player,
+        coordinate: action.start.coordinate,
+      },
+      end: {
+        timeline: action.end.timeline,
+        turn: action.end.turn,
+        player: action.end.player,
+        coordinate: action.end.coordinate,
+      },
+    }));
+  } catch(e) {
+    return [];
+  }
+}
+
 export default function Game({ roomId, playerColor, isHost, onLeave }) {
   const containerRef = useRef(null);
   const chessRef = useRef(null);
@@ -18,11 +39,10 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   const handleGameUpdate = useCallback((data) => {
     if (!chessRef.current || !rendererRef.current) return;
-    if (!data.actionHistory) return;
+    if (!data.actionHistory || !Array.isArray(data.actionHistory)) return;
     const chess = chessRef.current;
     const remote = data.actionHistory;
-    const local = chess.actionHistory;
-    if (remote.length > local.length) {
+    if (remote.length > chess.actionHistory.length) {
       try {
         chess.reset();
         for (const action of remote) {
@@ -45,8 +65,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const turn = chess.player === 0 ? 'white' : 'black';
     if (turn === playerColorRef.current) {
       try {
-        const moves = chess.moves('all');
-        renderer.global.availableMoves(moves);
+        renderer.global.availableMoves(chess.moves('all'));
       } catch (e) {
         renderer.global.availableMoves([]);
       }
@@ -60,7 +79,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const turn = chess.player === 0 ? 'white' : 'black';
     setCurrentTurn(turn);
     setMoveBuffer(chess.moveBuffer ? [...chess.moveBuffer] : []);
-    setInCheck(chess.inCheck ? chess.inCheck.length > 0 : false);
+    setInCheck(!!(chess.inCheck && chess.inCheck.length > 0));
     if (chess.isCheckmate) {
       setGameStatus(chess.player === 0 ? 'Black wins by checkmate!' : 'White wins by checkmate!');
     } else if (chess.isStalemate) {
@@ -77,10 +96,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const unsub = watchRoomStatus(roomId, (s) => {
       if (isMounted.current) setStatus(s || 'waiting');
     });
-    return () => {
-      isMounted.current = false;
-      unsub();
-    };
+    return () => { isMounted.current = false; unsub(); };
   }, [roomId]);
 
   useEffect(() => {
@@ -95,31 +111,19 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     syncRenderer(chess);
     updateUIState(chess);
 
-    // Log ALL events to find correct event name
-renderer.on('moveSelect', (move) => {
-      console.log('moveSelect fired:', JSON.stringify(move));
+    // The renderer emits 'moveSelect' with the full move object from chess.moves()
+    // We pass it directly to chess.move() - no re-matching needed
+    renderer.on('moveSelect', (move) => {
+      const chess = chessRef.current;
+      if (!chess) return;
       const turn = chess.player === 0 ? 'white' : 'black';
       if (turn !== playerColorRef.current) return;
       try {
-        const moves = chess.moves('all');
-        const matched = moves.find(m =>
-          m.start.timeline === move.start.timeline &&
-          m.start.turn === move.start.turn &&
-          m.start.player === move.start.player &&
-          m.start.coordinate === move.start.coordinate &&
-          m.end.timeline === move.end.timeline &&
-          m.end.turn === move.end.turn &&
-          m.end.player === move.end.player &&
-          m.end.coordinate === move.end.coordinate
-        );
-        console.log('matched move:', JSON.stringify(matched));
-        if (matched) {
-          chess.move(matched);
-          syncRenderer(chess);
-          updateUIState(chess);
-        }
+        chess.move(move);
+        syncRenderer(chess);
+        updateUIState(chess);
       } catch (e) {
-        console.warn('Invalid move:', e);
+        console.warn('Move failed:', e);
       }
     });
 
@@ -139,7 +143,7 @@ renderer.on('moveSelect', (move) => {
       chess.submit();
       syncRenderer(chess);
       updateUIState(chess);
-      pushMove(chess.actionHistory, null);
+      pushMove(serializeHistory(chess.actionHistory));
     } catch (e) {
       console.warn('Submit failed:', e);
     }
