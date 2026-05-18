@@ -7,24 +7,19 @@ export function useFirebaseGame(roomId, playerColor, onGameUpdate) {
 
   useEffect(() => {
     if (!roomId) return;
-
     const gameRef = ref(db, `rooms/${roomId}/game`);
     const unsub = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        onGameUpdate(data);
-      }
+      if (data) onGameUpdate(data);
     });
-
     listenerRef.current = unsub;
     return () => unsub();
   }, [roomId, onGameUpdate]);
 
-  const pushMove = useCallback(async (actionHistory, board) => {
+  const pushMove = useCallback(async (actionHistory) => {
     if (!roomId) return;
     await update(ref(db, `rooms/${roomId}/game`), {
       actionHistory,
-      board,
       lastUpdated: Date.now(),
     });
   }, [roomId]);
@@ -43,7 +38,6 @@ export async function createRoom(roomId) {
     created: Date.now(),
     game: {
       actionHistory: [],
-      board: null,
       lastUpdated: Date.now(),
     },
   });
@@ -53,7 +47,8 @@ export async function joinRoom(roomId) {
   const snap = await get(ref(db, `rooms/${roomId}`));
   if (!snap.exists()) return null;
   const data = snap.val();
-  if (data.status === 'playing') return null; // full
+  // Allow joining if waiting OR if already playing (handles page refresh)
+  if (data.status !== 'waiting' && data.status !== 'playing') return null;
   await update(ref(db, `rooms/${roomId}`), { status: 'playing' });
   return data;
 }
