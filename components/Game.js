@@ -84,7 +84,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
     renderer.global.sync(chess);
 
-    renderer.on('move', (move) => {
+    const handleMove = (move) => {
       if (!isMounted.current) return;
       const turn = chess.player === 0 ? 'white' : 'black';
       if (turn !== playerColor) return;
@@ -97,7 +97,12 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
       } catch (e) {
         console.warn('Invalid move:', e);
       }
-    });
+    };
+
+    renderer.on('move', handleMove);
+    renderer.on('moveSelect', handleMove);
+    renderer.on('selectMove', handleMove);
+    renderer.on('action', handleMove);
 
     return () => {
       renderer.destroy();
