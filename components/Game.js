@@ -8,6 +8,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   const containerRef = useRef(null);
   const chessRef = useRef(null);
   const rendererRef = useRef(null);
+  const selectedMoveRef = useRef(null);
   const [status, setStatus] = useState('waiting');
   const [gameStatus, setGameStatus] = useState('');
   const [currentTurn, setCurrentTurn] = useState('white');
@@ -29,7 +30,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
         for (const action of remote) {
           chess.action(action, true);
         }
-        rendererRef.current.global.sync(chess);
+        syncRenderer(chess);
         updateUIState(chess);
       } catch (e) {
         console.warn('Failed to sync remote state:', e);
@@ -38,6 +39,23 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   }, []);
 
   const { pushMove } = useFirebaseGame(roomId, playerColor, handleGameUpdate);
+
+  function syncRenderer(chess) {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.global.sync(chess);
+    const turn = chess.player === 0 ? 'white' : 'black';
+    if (turn === playerColor) {
+      try {
+        const moves = chess.moves('all');
+        renderer.global.availableMoves(moves);
+      } catch (e) {
+        renderer.global.availableMoves([]);
+      }
+    } else {
+      renderer.global.availableMoves([]);
+    }
+  }
 
   function updateUIState(chess) {
     if (!isMounted.current) return;
@@ -59,11 +77,9 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   useEffect(() => {
     isMounted.current = true;
-
     const unsub = watchRoomStatus(roomId, (s) => {
       if (isMounted.current) setStatus(s || 'waiting');
     });
-
     return () => {
       isMounted.current = false;
       unsub();
@@ -76,33 +92,28 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const chess = new Chess();
     chessRef.current = chess;
 
-    const renderer = new ChessRenderer(containerRef.current, {
-      app: { backgroundAlpha: 0 },
-      viewport: { drag: true, wheel: true, pinch: true },
-    });
+    const renderer = new ChessRenderer(containerRef.current);
     rendererRef.current = renderer;
 
-    renderer.global.sync(chess);
+    syncRenderer(chess);
+    updateUIState(chess);
 
-    const handleMove = (move) => {
+    // Listen for available move selection
+    renderer.on('availableMovesUpdate', () => {});
+
+    // The renderer emits 'move' when a highlighted square is clicked
+    renderer.on('move', (move) => {
       if (!isMounted.current) return;
       const turn = chess.player === 0 ? 'white' : 'black';
       if (turn !== playerColor) return;
-
       try {
         chess.move(move);
-        renderer.global.sync(chess);
-        setMoveBuffer(chess.moveBuffer ? [...chess.moveBuffer] : []);
+        syncRenderer(chess);
         updateUIState(chess);
       } catch (e) {
         console.warn('Invalid move:', e);
       }
-    };
-
-    renderer.on('move', handleMove);
-    renderer.on('moveSelect', handleMove);
-    renderer.on('selectMove', handleMove);
-    renderer.on('action', handleMove);
+    });
 
     return () => {
       renderer.destroy();
@@ -113,14 +124,12 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   function handleSubmit() {
     const chess = chessRef.current;
-    const renderer = rendererRef.current;
-    if (!chess || !renderer) return;
+    if (!chess) return;
     if (chess.player !== (playerColor === 'white' ? 0 : 1)) return;
     if (!chess.moveBuffer || chess.moveBuffer.length === 0) return;
-
     try {
       chess.submit();
-      renderer.global.sync(chess);
+      syncRenderer(chess);
       updateUIState(chess);
       pushMove(chess.actionHistory, null);
     } catch (e) {
@@ -130,12 +139,10 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   function handleUndo() {
     const chess = chessRef.current;
-    const renderer = rendererRef.current;
-    if (!chess || !renderer) return;
-
+    if (!chess) return;
     try {
       chess.undo();
-      renderer.global.sync(chess);
+      syncRenderer(chess);
       updateUIState(chess);
     } catch (e) {
       console.warn('Undo failed:', e);
@@ -177,7 +184,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
       <div className="game-body">
         <div className="board-container" ref={containerRef} />
-
         <div className="side-panel">
           <div className="side-section">
             <div className="player-block opponent">
@@ -188,9 +194,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
               </div>
             </div>
           </div>
-
           <div className="side-divider" />
-
           <div className="side-section turn-section">
             <div className={`turn-indicator ${isMyTurn ? 'your-turn' : 'waiting-turn'}`}>
               {isMyTurn ? '◆ Your Turn' : '◇ Waiting...'}
@@ -201,28 +205,16 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
               </div>
             )}
           </div>
-
           <div className="side-divider" />
-
           <div className="side-section actions-section">
-            <button
-              className="action-btn submit-btn"
-              onClick={handleSubmit}
-              disabled={!isMyTurn || moveBuffer.length === 0}
-            >
+            <button className="action-btn submit-btn" onClick={handleSubmit} disabled={!isMyTurn || moveBuffer.length === 0}>
               Submit Turn
             </button>
-            <button
-              className="action-btn undo-btn"
-              onClick={handleUndo}
-              disabled={!isMyTurn || moveBuffer.length === 0}
-            >
+            <button className="action-btn undo-btn" onClick={handleUndo} disabled={!isMyTurn || moveBuffer.length === 0}>
               Undo Move
             </button>
           </div>
-
           <div className="side-divider" />
-
           <div className="side-section help-section">
             <div className="help-title">How to play</div>
             <ul className="help-list">
@@ -233,9 +225,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
               <li>Pinch/scroll to zoom, drag to pan</li>
             </ul>
           </div>
-
           <div className="side-divider" />
-
           <div className="side-section">
             <div className="player-block you">
               <div className={`player-indicator ${isMyTurn ? 'active' : ''}`} />
