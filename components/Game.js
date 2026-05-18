@@ -15,7 +15,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   const [inCheck, setInCheck] = useState(false);
   const isMounted = useRef(true);
 
-  // Handle incoming Firebase updates
   const handleGameUpdate = useCallback((data) => {
     if (!chessRef.current || !rendererRef.current) return;
     if (!data.actionHistory) return;
@@ -24,10 +23,8 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const remote = data.actionHistory;
     const local = chess.actionHistory;
 
-    // Only apply if remote has more moves than local
     if (remote.length > local.length) {
       try {
-        // Reset and replay all actions
         chess.reset();
         for (const action of remote) {
           chess.action(action, true);
@@ -63,7 +60,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   useEffect(() => {
     isMounted.current = true;
 
-    // Watch room status (waiting → playing)
     const unsub = watchRoomStatus(roomId, (s) => {
       if (isMounted.current) setStatus(s || 'waiting');
     });
@@ -77,38 +73,21 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   useEffect(() => {
     if (status !== 'playing' || !containerRef.current) return;
 
-    // Init chess engine
     const chess = new Chess();
     chessRef.current = chess;
 
-    // Init renderer
     const renderer = new ChessRenderer(containerRef.current, {
       app: { backgroundAlpha: 0 },
       viewport: { drag: true, wheel: true, pinch: true },
-    }, {
-      // Steam-like dark palette
-      background: 0x0d0d1a,
-      whiteTile: 0x2a3a5c,
-      blackTile: 0x1a1a35,
-      whiteTimeline: 0x1e3050,
-      blackTimeline: 0x2a1a3a,
-      whitePiece: 0xf0e6d0,
-      blackPiece: 0x2a1020,
-      move: 0x4a7ab5,
-      capture: 0xb54a4a,
-      pastMove: 0x3a5a8a,
-      pastCapture: 0x8a3a3a,
-      check: 0xc8a84b,
     });
     rendererRef.current = renderer;
 
     renderer.global.sync(chess);
 
-    // Listen for move selection from renderer
     renderer.on('move', (move) => {
       if (!isMounted.current) return;
       const turn = chess.player === 0 ? 'white' : 'black';
-      if (turn !== playerColor) return; // not your turn
+      if (turn !== playerColor) return;
 
       try {
         chess.move(move);
@@ -138,7 +117,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
       chess.submit();
       renderer.global.sync(chess);
       updateUIState(chess);
-      // Push to Firebase
       pushMove(chess.actionHistory, null);
     } catch (e) {
       console.warn('Submit failed:', e);
@@ -163,7 +141,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   return (
     <div className="game">
-      {/* Header */}
       <div className="game-header">
         <div className="game-header-left">
           <span className="game-logo">5D CHESS</span>
@@ -181,7 +158,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
         </div>
       </div>
 
-      {/* Waiting overlay */}
       {status === 'waiting' && (
         <div className="waiting-overlay">
           <div className="waiting-card">
@@ -194,11 +170,9 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
         </div>
       )}
 
-      {/* Board */}
       <div className="game-body">
         <div className="board-container" ref={containerRef} />
 
-        {/* Side panel */}
         <div className="side-panel">
           <div className="side-section">
             <div className="player-block opponent">
