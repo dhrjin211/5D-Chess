@@ -23,5 +23,8 @@
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],
     "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  },
+  "overrides": {
+    "@pietal.dev/gstats": "npm:@pietal.dev/gstats@0.1.5"
   }
 }
