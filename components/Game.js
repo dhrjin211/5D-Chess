@@ -96,14 +96,28 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     updateUIState(chess);
 
     // Log ALL events to find correct event name
-   renderer.on('moveSelect', (move) => {
-      console.log('moveSelect fired:', move);
+renderer.on('moveSelect', (move) => {
+      console.log('moveSelect fired:', JSON.stringify(move));
       const turn = chess.player === 0 ? 'white' : 'black';
       if (turn !== playerColorRef.current) return;
       try {
-        chess.move(move);
-        syncRenderer(chess);
-        updateUIState(chess);
+        const moves = chess.moves('all');
+        const matched = moves.find(m =>
+          m.start.timeline === move.start.timeline &&
+          m.start.turn === move.start.turn &&
+          m.start.player === move.start.player &&
+          m.start.coordinate === move.start.coordinate &&
+          m.end.timeline === move.end.timeline &&
+          m.end.turn === move.end.turn &&
+          m.end.player === move.end.player &&
+          m.end.coordinate === move.end.coordinate
+        );
+        console.log('matched move:', JSON.stringify(matched));
+        if (matched) {
+          chess.move(matched);
+          syncRenderer(chess);
+          updateUIState(chess);
+        }
       } catch (e) {
         console.warn('Invalid move:', e);
       }
