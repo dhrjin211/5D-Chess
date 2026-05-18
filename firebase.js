@@ -2,13 +2,13 @@ import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.REACT_APP_FIREBASE_DATABASE_URL,
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  apiKey: "AIzaSyBikWNVxx5YoF1eAabEaVa8SbMTnxk3qlM",
+  authDomain: "d-chess-c4e7c.firebaseapp.com",
+  databaseURL: "https://d-chess-c4e7c-default-rtdb.firebaseio.com",
+  projectId: "d-chess-c4e7c",
+  storageBucket: "d-chess-c4e7c.firebasestorage.app",
+  messagingSenderId: "571088594227",
+  appId: "1:571088594227:web:fb51d34f1dc7dd02de4a46"
 };
 
 const app = initializeApp(firebaseConfig);
