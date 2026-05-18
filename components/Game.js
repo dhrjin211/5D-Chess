@@ -8,7 +8,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   const containerRef = useRef(null);
   const chessRef = useRef(null);
   const rendererRef = useRef(null);
-  const selectedMoveRef = useRef(null);
+  const playerColorRef = useRef(playerColor);
   const [status, setStatus] = useState('waiting');
   const [gameStatus, setGameStatus] = useState('');
   const [currentTurn, setCurrentTurn] = useState('white');
@@ -19,11 +19,9 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   const handleGameUpdate = useCallback((data) => {
     if (!chessRef.current || !rendererRef.current) return;
     if (!data.actionHistory) return;
-
     const chess = chessRef.current;
     const remote = data.actionHistory;
     const local = chess.actionHistory;
-
     if (remote.length > local.length) {
       try {
         chess.reset();
@@ -45,7 +43,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     if (!renderer) return;
     renderer.global.sync(chess);
     const turn = chess.player === 0 ? 'white' : 'black';
-    if (turn === playerColor) {
+    if (turn === playerColorRef.current) {
       try {
         const moves = chess.moves('all');
         renderer.global.availableMoves(moves);
@@ -63,7 +61,6 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     setCurrentTurn(turn);
     setMoveBuffer(chess.moveBuffer ? [...chess.moveBuffer] : []);
     setInCheck(chess.inCheck ? chess.inCheck.length > 0 : false);
-
     if (chess.isCheckmate) {
       setGameStatus(chess.player === 0 ? 'Black wins by checkmate!' : 'White wins by checkmate!');
     } else if (chess.isStalemate) {
@@ -98,21 +95,23 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     syncRenderer(chess);
     updateUIState(chess);
 
-    // Listen for available move selection
-    renderer.on('availableMovesUpdate', () => {});
-
-    // The renderer emits 'move' when a highlighted square is clicked
-    renderer.on('move', (move) => {
-      if (!isMounted.current) return;
-      const turn = chess.player === 0 ? 'white' : 'black';
-      if (turn !== playerColor) return;
-      try {
-        chess.move(move);
-        syncRenderer(chess);
-        updateUIState(chess);
-      } catch (e) {
-        console.warn('Invalid move:', e);
-      }
+    // Log ALL events to find correct event name
+    const allEvents = ['move', 'moveSelect', 'selectMove', 'action', 'click', 'select', 'pieceSelect', 'squareClick', 'moveBuffer', 'moveBufferUpdate'];
+    allEvents.forEach(evt => {
+      renderer.on(evt, (data) => {
+        console.log('EVENT FIRED:', evt, data);
+        if (evt === 'move' || evt === 'moveSelect' || evt === 'selectMove' || evt === 'action') {
+          const turn = chess.player === 0 ? 'white' : 'black';
+          if (turn !== playerColorRef.current) return;
+          try {
+            chess.move(data);
+            syncRenderer(chess);
+            updateUIState(chess);
+          } catch (e) {
+            console.warn('Invalid move:', e);
+          }
+        }
+      });
     });
 
     return () => {
@@ -120,12 +119,12 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
       rendererRef.current = null;
       chessRef.current = null;
     };
-  }, [status, playerColor]);
+  }, [status]);
 
   function handleSubmit() {
     const chess = chessRef.current;
     if (!chess) return;
-    if (chess.player !== (playerColor === 'white' ? 0 : 1)) return;
+    if (chess.player !== (playerColorRef.current === 'white' ? 0 : 1)) return;
     if (!chess.moveBuffer || chess.moveBuffer.length === 0) return;
     try {
       chess.submit();
