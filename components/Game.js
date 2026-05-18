@@ -96,22 +96,17 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     updateUIState(chess);
 
     // Log ALL events to find correct event name
-    const allEvents = ['move', 'moveSelect', 'selectMove', 'action', 'click', 'select', 'pieceSelect', 'squareClick', 'moveBuffer', 'moveBufferUpdate'];
-    allEvents.forEach(evt => {
-      renderer.on(evt, (data) => {
-        console.log('EVENT FIRED:', evt, data);
-        if (evt === 'move' || evt === 'moveSelect' || evt === 'selectMove' || evt === 'action') {
-          const turn = chess.player === 0 ? 'white' : 'black';
-          if (turn !== playerColorRef.current) return;
-          try {
-            chess.move(data);
-            syncRenderer(chess);
-            updateUIState(chess);
-          } catch (e) {
-            console.warn('Invalid move:', e);
-          }
-        }
-      });
+   renderer.on('moveSelect', (move) => {
+      console.log('moveSelect fired:', move);
+      const turn = chess.player === 0 ? 'white' : 'black';
+      if (turn !== playerColorRef.current) return;
+      try {
+        chess.move(move);
+        syncRenderer(chess);
+        updateUIState(chess);
+      } catch (e) {
+        console.warn('Invalid move:', e);
+      }
     });
 
     return () => {
