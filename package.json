@@ -2,6 +2,9 @@
   "name": "5d-chess-online",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
     "5d-chess-js": "^1.2.1",
     "5d-chess-renderer": "1.0.1",
