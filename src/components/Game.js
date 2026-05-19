@@ -30,6 +30,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   const playerColorRef = useRef(playerColor);
   const [status, setStatus] = useState('waiting');
   const [gameStatus, setGameStatus] = useState('');
+  const [submitError, setSubmitError] = useState('');
   const [currentTurn, setCurrentTurn] = useState('white');
   const [moveBuffer, setMoveBuffer] = useState([]);
   const [inCheck, setInCheck] = useState(false);
@@ -49,7 +50,7 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
         syncRenderer(chess);
         updateUIState(chess);
       } catch (e) {
-        console.warn('Failed to sync remote state:', e);
+        console.error('Sync failed:', e);
       }
     }
   }, []);
@@ -60,16 +61,10 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     const renderer = rendererRef.current;
     if (!renderer) return;
     renderer.global.sync(chess);
-    // Show available moves only when it's this player's turn
-    // In 5d-chess-js: player 0 = white, player 1 = black
-    const myPlayerIndex = playerColorRef.current === 'white' ? 0 : 1;
-    const itIsMyTurn = chess.player === myPlayerIndex;
-    if (itIsMyTurn) {
-      try {
-        renderer.global.availableMoves(chess.moves('all'));
-      } catch (e) {
-        renderer.global.availableMoves([]);
-      }
+    // chess.player returns 'white' or 'black' string
+    if (chess.player === playerColorRef.current) {
+      try { renderer.global.availableMoves(chess.moves('all')); }
+      catch(e) { renderer.global.availableMoves([]); }
     } else {
       renderer.global.availableMoves([]);
     }
@@ -77,17 +72,16 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   function updateUIState(chess) {
     if (!isMounted.current) return;
-    // chess.player is who moves NEXT (0=white, 1=black)
-    const turn = chess.player === 0 ? 'white' : 'black';
-    setCurrentTurn(turn);
+    // chess.player is 'white' or 'black' - who needs to move NEXT
+    setCurrentTurn(chess.player);
     setMoveBuffer(chess.moveBuffer ? [...chess.moveBuffer] : []);
     setInCheck(!!(chess.inCheck && chess.inCheck.length > 0));
     if (chess.isCheckmate) {
-      setGameStatus(chess.player === 0 ? 'Black wins!' : 'White wins!');
+      setGameStatus(chess.player === 'white' ? '⚔ Black wins!' : '⚔ White wins!');
     } else if (chess.isStalemate) {
       setGameStatus('Draw by stalemate');
     } else if (chess.inCheck && chess.inCheck.length > 0) {
-      setGameStatus('Check!');
+      setGameStatus('⚠ Check!');
     } else {
       setGameStatus('');
     }
@@ -103,22 +97,19 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
 
   useEffect(() => {
     if (status !== 'playing' || !containerRef.current) return;
-
     const chess = new Chess();
     chessRef.current = chess;
-
     const renderer = new ChessRenderer(containerRef.current);
     rendererRef.current = renderer;
-
     syncRenderer(chess);
     updateUIState(chess);
 
     renderer.on('moveSelect', (move) => {
       const chess = chessRef.current;
       if (!chess) return;
-      // Only allow moving if it's your turn
-      const myPlayerIndex = playerColorRef.current === 'white' ? 0 : 1;
-      if (chess.player !== myPlayerIndex) return;
+      // chess.player is 'white' or 'black'
+      if (chess.player !== playerColorRef.current) return;
+      setSubmitError('');
       try {
         chess.move(move);
         syncRenderer(chess);
@@ -138,21 +129,33 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
   function handleSubmit() {
     const chess = chessRef.current;
     if (!chess) return;
-    if (!chess.moveBuffer || chess.moveBuffer.length === 0) return;
+    if (!chess.moveBuffer || chess.moveBuffer.length === 0) {
+      setSubmitError('Stage at least one move first.');
+      return;
+    }
+    setSubmitError('');
     try {
-      // submit() finalizes the current player's turn
       chess.submit();
       syncRenderer(chess);
       updateUIState(chess);
       pushMove(serializeHistory(chess.actionHistory));
     } catch (e) {
-      console.warn('Submit failed:', e);
+      const msg = e && e.message ? e.message : String(e);
+      if (msg.includes('more moves are needed')) {
+        setSubmitError('Must move on every active timeline before submitting.');
+      } else if (msg.includes('in check')) {
+        setSubmitError('Cannot submit — you are in check! Move your king out of check first.');
+      } else {
+        setSubmitError(msg);
+      }
+      console.error('Submit error:', e);
     }
   }
 
   function handleUndo() {
     const chess = chessRef.current;
     if (!chess) return;
+    setSubmitError('');
     try {
       chess.undo();
       syncRenderer(chess);
@@ -162,30 +165,26 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
     }
   }
 
-  // isMyTurn: it's your turn when chess.player matches your color index
-  // BUT also show "your turn" when you have moves staged (moveBuffer > 0 and you just moved)
-  const myPlayerIndex = playerColor === 'white' ? 0 : 1;
-  const chess = chessRef.current;
   const hasStagedMoves = moveBuffer.length > 0;
-  // After staging moves, chess.player flips - so check moveBuffer too
   const isMyTurn = currentTurn === playerColor || hasStagedMoves;
 
   return (
     <div className="game">
       <div className="game-header">
         <div className="game-header-left">
-          <span className="game-logo">5D CHESS</span>
-          <span className="game-room-code">Room: {roomId}</span>
+          <div className="game-logo-block">
+            <span className="game-logo">5D CHESS</span>
+            <span className="game-logo-sub">MULTIVERSE TIME TRAVEL</span>
+          </div>
         </div>
         <div className="game-header-center">
           {gameStatus && (
-            <span className={`game-status-badge ${inCheck ? 'check' : ''}`}>
-              {gameStatus}
-            </span>
+            <span className={`game-status-badge ${inCheck ? 'check' : ''}`}>{gameStatus}</span>
           )}
         </div>
         <div className="game-header-right">
-          <button className="btn-leave" onClick={onLeave}>Leave</button>
+          <span className="game-room-code">ROOM {roomId}</span>
+          <button className="btn-leave" onClick={onLeave}>✕ Leave</button>
         </div>
       </div>
 
@@ -193,10 +192,10 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
         <div className="waiting-overlay">
           <div className="waiting-card">
             <div className="waiting-spinner" />
-            <h2>Waiting for opponent</h2>
-            <p>Share this code with your friend:</p>
+            <h2>Waiting for Opponent</h2>
+            <p>Share this room code:</p>
             <div className="waiting-code">{roomId}</div>
-            <p className="waiting-sub">You are playing as <strong>{playerColor}</strong></p>
+            <p className="waiting-sub">You are playing as <strong className="color-badge">{playerColor}</strong></p>
           </div>
         </div>
       )}
@@ -204,62 +203,58 @@ export default function Game({ roomId, playerColor, isHost, onLeave }) {
       <div className="game-body">
         <div className="board-container" ref={containerRef} />
         <div className="side-panel">
-          <div className="side-section">
-            <div className="player-block opponent">
-              <div className={`player-indicator ${!isMyTurn ? 'active' : ''}`} />
-              <div>
-                <div className="player-name">Opponent</div>
-                <div className="player-color">{playerColor === 'white' ? 'Black' : 'White'}</div>
-              </div>
+          <div className="player-row">
+            <div className={`color-pip ${playerColor === 'white' ? 'black' : 'white'} ${!isMyTurn ? 'active' : ''}`} />
+            <div className="player-info">
+              <span className="player-label">OPPONENT</span>
+              <span className="player-color-name">{playerColor === 'white' ? 'Black' : 'White'}</span>
             </div>
+            {!isMyTurn && <span className="thinking-dots"><span>.</span><span>.</span><span>.</span></span>}
           </div>
-          <div className="side-divider" />
-          <div className="side-section turn-section">
-            <div className={`turn-indicator ${isMyTurn ? 'your-turn' : 'waiting-turn'}`}>
-              {isMyTurn ? '◆ Your Turn' : '◇ Waiting...'}
+
+          <div className="panel-divider" />
+
+          <div className="turn-block">
+            <div className={`turn-badge ${isMyTurn ? 'active' : 'inactive'}`}>
+              {isMyTurn ? '◆ YOUR TURN' : '◇ WAITING'}
             </div>
-            {moveBuffer.length > 0 && (
-              <div className="move-buffer-info">
-                {moveBuffer.length} move{moveBuffer.length > 1 ? 's' : ''} staged
+            {hasStagedMoves && (
+              <div className="staged-info">
+                {moveBuffer.length} move{moveBuffer.length > 1 ? 's' : ''} staged — cover all timelines then submit
               </div>
             )}
+            {submitError && <div className="submit-error">{submitError}</div>}
           </div>
-          <div className="side-divider" />
-          <div className="side-section actions-section">
-            <button
-              className="action-btn submit-btn"
-              onClick={handleSubmit}
-              disabled={moveBuffer.length === 0}
-            >
-              Submit Turn
+
+          <div className="panel-divider" />
+
+          <div className="actions-block">
+            <button className="btn-submit" onClick={handleSubmit} disabled={moveBuffer.length === 0}>
+              <span className="btn-icon">⏎</span> Submit Turn
             </button>
-            <button
-              className="action-btn undo-btn"
-              onClick={handleUndo}
-              disabled={moveBuffer.length === 0}
-            >
-              Undo Move
+            <button className="btn-undo" onClick={handleUndo} disabled={moveBuffer.length === 0}>
+              ↩ Undo Move
             </button>
           </div>
-          <div className="side-divider" />
-          <div className="side-section help-section">
-            <div className="help-title">How to play</div>
-            <ul className="help-list">
-              <li>Click a piece to see valid moves</li>
-              <li>Click a highlighted square to move</li>
-              <li>Move across timelines by clicking squares on other boards</li>
-              <li>Press <strong>Submit Turn</strong> when done</li>
-              <li>Pinch/scroll to zoom, drag to pan</li>
-            </ul>
+
+          <div className="panel-divider" />
+
+          <div className="help-block">
+            <div className="help-title">HOW TO PLAY</div>
+            <div className="help-item"><span className="help-key">Click</span> a piece to see valid moves</div>
+            <div className="help-item"><span className="help-key">Click</span> a highlighted square to move</div>
+            <div className="help-item"><span className="help-key">Drag</span> to pan across timelines</div>
+            <div className="help-item"><span className="help-key">Scroll</span> to zoom in/out</div>
+            <div className="help-item">Cover <em>all active timelines</em> then submit</div>
           </div>
-          <div className="side-divider" />
-          <div className="side-section">
-            <div className="player-block you">
-              <div className={`player-indicator ${isMyTurn ? 'active' : ''}`} />
-              <div>
-                <div className="player-name">You</div>
-                <div className="player-color">{playerColor.charAt(0).toUpperCase() + playerColor.slice(1)}</div>
-              </div>
+
+          <div className="panel-divider" />
+
+          <div className="player-row">
+            <div className={`color-pip ${playerColor} ${isMyTurn ? 'active' : ''}`} />
+            <div className="player-info">
+              <span className="player-label">YOU</span>
+              <span className="player-color-name">{playerColor.charAt(0).toUpperCase() + playerColor.slice(1)}</span>
             </div>
           </div>
         </div>
